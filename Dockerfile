@@ -4,6 +4,12 @@ FROM node:18
 # Set the working directory in the container
 WORKDIR /app
 
+# Install Python
+RUN apt-get update && apt-get install -y python3 && apt-get clean
+
+# Optional: Install pip if you need it (for Python packages)
+RUN apt-get update && apt-get install -y python3-pip && apt-get clean
+
 # Copy package.json and package-lock.json to the working directory
 COPY package*.json ./
 

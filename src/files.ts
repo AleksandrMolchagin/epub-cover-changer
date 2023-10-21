@@ -1,3 +1,4 @@
+import { exec } from 'child_process';
 import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -9,6 +10,27 @@ interface document {
   file_id: string;
   file_unique_id: string;
   file_size: number;
+}
+
+async function changeEpubCover(epubFilePath: string, imageFilePath: string): Promise<void> {
+  const pythonScriptPath = '/app/src/change_cover.py';
+
+  return new Promise<void>((resolve, reject) => {
+      exec(`python3 ${pythonScriptPath} /app/${epubFilePath} /app/${imageFilePath}`, (error, stdout, stderr) => {
+          if (error) {
+              console.error(`exec error: ${error}`);
+              reject(error);
+              return;
+          }
+          if (stderr && stderr.trim().length > 0) {
+              console.error(`Errors: ${stderr}`);
+              reject(new Error(stderr));
+              return;
+          }
+          console.log(`Output: ${stdout}`);
+          resolve();
+      });
+  });
 }
 
 
@@ -28,14 +50,18 @@ export function CheckIfUserImageExists(chatId: number): boolean {
   return fs.existsSync(`${chatId}_image.jpg`) || fs.existsSync(`${chatId}_image.png`);
 }
 
-export function AddCoverToEpub(chatId: number, original_name: string ): void {
-  //rename file
-  fs.renameSync(`${chatId}_book.epub`, `${original_name}.epub`);
+export async function AddCoverToEpub(chatId: number, original_name: string): Promise<void> {
+  await changeEpubCover(`${chatId}_book.epub`, `${chatId}_image`);
+  fs.renameSync(`${chatId}_book.epub`, `${original_name}`);
 }
 
-export function addAndRetrun(chatId: number, original_name: string): string {
-  AddCoverToEpub(chatId, original_name);
-  return `${original_name}.epub`;
+export async function addAndRetrun(chatId: number, original_name: string): Promise<string> {
+  try {
+    await AddCoverToEpub(chatId, original_name);
+    return `${original_name}`;
+  } catch (error) {
+    throw error;
+  }
 }
 
 function reverseString(inputString: string): string {
@@ -44,7 +70,7 @@ function reverseString(inputString: string): string {
 
 function changeName(chatId: number, original_file: document): string {
   if (checkIfImage(original_file)) {
-    return `${chatId}_image.${reverseString(reverseString(original_file.file_name).split('.')[0])}`;
+    return `${chatId}_image`;
   } else if (checkIfEpub(original_file)) {
     return `${chatId}_book.epub`;
   }
