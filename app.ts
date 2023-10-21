@@ -2,6 +2,7 @@ import express from 'express';
 import bodyParser from 'body-parser';
 import axios from 'axios';
 import dotenv from 'dotenv';
+import { addAndRetrun, checkIfEpub, checkIfImage, downloadFile } from './src/files';
 dotenv.config();
 
 const app = express();
@@ -14,6 +15,12 @@ app.use(bodyParser.json());
 const botToken = process.env.TELEGRAM_BOT_TOKEN || '';
 const webhookURL = process.env.WEBHOOK_URL || "";
 
+// Create an object to save user uploads
+const userUploadsImages: Record<string, Boolean> = {};
+const userUploadsEpub: Record<string, Boolean> = {};
+const userUploadOriginalName: Record<string, string> = {};
+
+
 // configuring the bot via Telegram API to use our route below as webhook
 const setupWebhook = async () => {
     try {
@@ -25,22 +32,61 @@ const setupWebhook = async () => {
 }
 
 app.get('/', (req, res) => {
-  res.send('Hello, this is your Express.js server!');
+    res.send('Hello, this is your Express.js server!');
 });
 
-app.post(`/bot${botToken}`, (req, res) => {
-  const message = req.body.message;
-  const chatId = message.chat.id;
-  const text = message.text;
+app.post(`/bot${botToken}`, async (req, res) => {
+    const message = req.body.message;
+    const chatId = message.chat.id;
+    const text = message.text;
 
-  // Respond to specific commands (e.g., /start)
-  if (text === '/start') {
-    sendMessage(chatId, 'Welcome to your Telegram bot!');
-  } else {
-    sendMessage(chatId, 'I received your message: ' + text);
-  }
 
-  res.status(200).send('OK');
+    console.log('Received message:', req.body);
+    // Check if two files are attached
+    if (message.document) {
+        if (checkIfImage(message.document)) {
+            try {
+                await downloadFile(message.document, botToken, chatId);
+                userUploadsImages[chatId] = true;
+            } catch (error) {
+                sendMessage(chatId, 'Error downloading image.');
+                return;
+            }
+        } else if (checkIfEpub(message.document)) {
+            try {
+                await downloadFile(message.document, botToken, chatId);
+                userUploadsEpub[chatId] = true;
+                userUploadOriginalName[chatId] = message.document.file_name;
+            } catch (error) {
+                sendMessage(chatId, 'Error downloading EPUB.');
+                console.error(error);
+                return;
+            }
+        }
+
+        if (userUploadsImages[chatId] && userUploadsEpub[chatId]) {
+            await sendMessage(chatId, 'Both files downloaded successfully. Adding cover to EPUB...');
+            addAndRetrun(chatId, userUploadOriginalName[chatId]);
+            sendMessage(chatId, 'Cover added successfully. Sending the file to you!');
+            userUploadsImages[chatId] = false;
+            userUploadsEpub[chatId] = false;
+
+        } else if (userUploadsImages[chatId] && !userUploadsEpub[chatId]) {
+            sendMessage(chatId, 'Image downloaded successfully. Please send me an EPUB file.');
+        } else if (userUploadsEpub[chatId] && !userUploadsImages[chatId]) {
+            sendMessage(chatId, 'EPUB downloaded successfully. Please send me a cover image (uncompressed).');
+        }
+
+    } else {
+        // Respond to other messages
+        if (text === '/start') {
+            sendMessage(chatId, 'Welcome to your Telegram bot! Please send me two files: an EPUB file and a cover image (uncompressed) 🌞✨');
+        } else {
+            sendMessage(chatId, '‼️ To use this bot, please send me two files: an EPUB file and a cover image (!!!uncompressed) 👀');
+        }
+    }
+
+    res.status(200).send('OK');
 });
 
 
@@ -49,24 +95,24 @@ app.post(`/bot${botToken}`, (req, res) => {
 // Function to send a message using the Telegram Bot API
 async function sendMessage(chatId: number, text: string) {
     try {
-      const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
-      const data = {
-        chat_id: chatId,
-        text: text,
-      };
-  
-      const response = await axios.post(apiUrl, data);
-  
-      if (response.status === 200) {
-        console.log('Message sent successfully:', response.data);
-      } else {
-        console.error('Error sending message. Status code:', response.status);
-      }
+        const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
+        const data = {
+            chat_id: chatId,
+            text: text,
+        };
+
+        const response = await axios.post(apiUrl, data);
+
+        if (response.status === 200) {
+            console.log('Message sent successfully:', response.data);
+        } else {
+            console.error('Error sending message. Status code:', response.status);
+        }
     } catch (error) {
-      console.error('Error sending message:', error);
+        console.error('Error sending message:', error);
     }
-  }
-  
+}
+
 
 // Start the Express.js server
 app.listen(port, async () => {
