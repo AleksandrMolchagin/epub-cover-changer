@@ -1,0 +1,14 @@
+version: '3'
+services:
+  web:
+    container_name: epubcoverchanger
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    networks:
+      - nginx_nginx-network
+
+networks:
+  nginx_nginx-network:
+    external: true
